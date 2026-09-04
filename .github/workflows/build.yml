@@ -23,6 +23,15 @@ jobs:
       - name: Install toolchain
         run: git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 toolchain
 
+      - name: DEBUG - inspect toolchain
+        run: |
+          echo "=== toolchain top level ==="
+          ls -la toolchain/
+          echo "=== toolchain/bin ==="
+          ls -la toolchain/bin/ || echo "no bin dir"
+          echo "=== searching for any gcc binary ==="
+          find toolchain -iname "*gcc*" 2>/dev/null
+
       - name: Configure kernel
         working-directory: kernel_src
         run: |
