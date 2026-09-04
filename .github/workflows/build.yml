@@ -65,12 +65,13 @@ jobs:
           export ANDROID_MAJOR_VERSION=o
           export HOSTCC=gcc
           
-          # CRITICAL FIX: 
-          # The aircrack-ng driver is a cfg80211 driver. It MUST be built with PLATFORM_LINUX defined.
-          # We DO NOT touch the Makefile's CONFIG_PLATFORM_I386_PC (leaving it as 'y' defines PLATFORM_LINUX).
-          # We just pass ARCH, CROSS_COMPILE, and KSRC via the command line.
+          # CRITICAL FIX:
+          # 1. DO NOT touch the Makefile. Leave CONFIG_PLATFORM_I386_PC = y.
+          #    This defines PLATFORM_LINUX, which is REQUIRED for the cfg80211 driver to compile correctly.
+          # 2. Explicitly pass the -I include paths so the compiler finds drv_types.h.
           
-          make KSRC=${{ github.workspace }}/kernel_src EXTRA_CFLAGS="-Wno-error" modules
+          DRIVER_DIR="${{ github.workspace }}/driver"
+          make KSRC=${{ github.workspace }}/kernel_src EXTRA_CFLAGS="-I${DRIVER_DIR}/include -I${DRIVER_DIR}/hal/phydm -Wno-error -Wno-unused-function -Wno-unused-variable" modules
 
       - name: Upload Kernel Module
         uses: actions/upload-artifact@v4
