@@ -53,15 +53,16 @@ jobs:
       - name: Clone driver
         run: git clone https://github.com/lwfinger/rtl8188eu driver
 
-      - name: Patch driver for GCC 4.9 compatibility
+      - name: Patch driver for GCC 4.9
         working-directory: driver
         run: |
-          # Remove __attribute__((__fallthrough__)) which GCC 4.9 doesn't understand
-          find . -type f -name "*.c" -exec sed -i 's/__attribute__ ((__fallthrough__));//g' {} +
-          find . -type f -name "*.c" -exec sed -i 's/__attribute__((__fallthrough__));//g' {} +
-          find . -type f -name "*.c" -exec sed -i 's/__attribute__ ((fallthrough));//g' {} +
-          find . -type f -name "*.c" -exec sed -i 's/__attribute__((fallthrough));//g' {} +
-          find . -type f -name "*.c" -exec sed -i 's/fallthrough;//g' {} +
+          # 1. Nuclear delete of 'fallthrough' hints (fixes GCC 4.9 syntax error)
+          find . -name "*.c" -exec sed -i '/fallthrough/d' {} +
+          
+          # 2. Inject warning suppressions DIRECTLY into the Makefile using sed.
+          # CRITICAL: We DO NOT pass EXTRA_CFLAGS on the command line.
+          # If we did, it would overwrite the Makefile's internal -I include paths.
+          sed -i '1i EXTRA_CFLAGS += -Wno-error -Wno-declaration-after-statement' Makefile
 
       - name: Build driver
         working-directory: driver
@@ -71,20 +72,11 @@ jobs:
           export ANDROID_MAJOR_VERSION=o
           export HOSTCC=gcc
           
-          # Add -Wno-error to prevent any remaining warnings from failing the build
-          make KSRC=${{ github.workspace }}/kernel_src EXTRA_CFLAGS="-Wno-error" modules
+          # NO EXTRA_CFLAGS ON THE COMMAND LINE. Let the Makefile handle its own paths.
+          make KSRC=${{ github.workspace }}/kernel_src modules
 
       - name: Upload Kernel Module
         uses: actions/upload-artifact@v4
         with:
           name: 8188eu-module
           path: driver/8188eu.ko
-
-      - name: Upload Debug Files
-        uses: actions/upload-artifact@v4
-        with:
-          name: kernel-debug-files
-          path: |
-            kernel_src/.config
-            kernel_src/Module.symvers
-            kernel_src/include/config/kernel.release
