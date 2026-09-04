@@ -34,8 +34,9 @@ jobs:
           export ANDROID_MAJOR_VERSION=o
           export HOSTCC=gcc
           
-          # FIX: Use yes "" to automatically answer any hidden prompts and prevent hanging
-          yes "" | make exynos7870-a2corelte_defconfig || yes "" | make exynos7870_defconfig
+          # FIX 1: Use yes "" to prevent hanging on hidden prompts
+          # FIX 2: Add HOSTCFLAGS="-fcommon" to fix GCC 10+ multiple definition errors
+          yes "" | make HOSTCFLAGS="-fcommon" exynos7870-a2corelte_defconfig || yes "" | make HOSTCFLAGS="-fcommon" exynos7870_defconfig
           
           scripts/config --disable CONFIG_MODULE_SIG
           scripts/config --disable CONFIG_MODULE_SIG_FORCE
@@ -52,8 +53,8 @@ jobs:
           export ANDROID_MAJOR_VERSION=o
           export HOSTCC=gcc
           
-          # FIX: Use yes "" to prevent hangs during compilation
-          yes "" | make -j$(nproc) Image
+          # FIX: Use yes "" and HOSTCFLAGS="-fcommon"
+          yes "" | make HOSTCFLAGS="-fcommon" -j$(nproc) Image
           echo "Kernel release: $(cat include/config/kernel.release)"
 
       - name: Clone driver
