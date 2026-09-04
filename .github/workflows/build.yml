@@ -12,31 +12,30 @@ jobs:
       - name: Install build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bc flex bison libssl-dev libncurses-dev git wget
+          sudo apt-get install -y build-essential bc flex bison libssl-dev libncurses-dev git wget unzip
 
       - name: Download kernel source
         run: |
-          wget -O Kernel.tar.gz "https://github.com/Faisal-The-1/a2core-rtl8188eus-build/releases/download/v1/Kernel.tar.gz"
+          wget -q -O Kernel.tar.gz "https://github.com/Faisal-The-1/a2core-rtl8188eus-build/releases/download/v1/Kernel.tar.gz"
           mkdir kernel_src
           tar xzf Kernel.tar.gz -C kernel_src
 
-      - name: Install toolchain
-        run: git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 toolchain
-
-      - name: DEBUG - inspect toolchain
+      - name: Download legacy NDK toolchain (contains GCC 4.9)
         run: |
-          echo "=== toolchain top level ==="
-          ls -la toolchain/
-          echo "=== toolchain/bin ==="
-          ls -la toolchain/bin/ || echo "no bin dir"
-          echo "=== searching for any gcc binary ==="
-          find toolchain -iname "*gcc*" 2>/dev/null
+          wget -q https://dl.google.com/android/repository/android-ndk-r16b-linux-x86_64.zip -O ndk.zip
+          unzip -q ndk.zip "android-ndk-r16b/toolchains/aarch64-linux-android-4.9/*"
+          echo "TOOLCHAIN_BIN=$GITHUB_WORKSPACE/android-ndk-r16b/toolchains/aarch64-linux-android-4.9/prebuilt/linux-x86_64/bin" >> $GITHUB_ENV
+
+      - name: Verify toolchain
+        run: |
+          ls -la $TOOLCHAIN_BIN
+          $TOOLCHAIN_BIN/aarch64-linux-android-gcc --version
 
       - name: Configure kernel
         working-directory: kernel_src
         run: |
           export ARCH=arm64
-          export CROSS_COMPILE=$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-
+          export CROSS_COMPILE=$TOOLCHAIN_BIN/aarch64-linux-android-
           export ANDROID_MAJOR_VERSION=o
           make exynos7870-a2corelte_defconfig
           scripts/config --disable CONFIG_LOCALVERSION_AUTO
@@ -46,7 +45,7 @@ jobs:
         working-directory: kernel_src
         run: |
           export ARCH=arm64
-          export CROSS_COMPILE=$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-
+          export CROSS_COMPILE=$TOOLCHAIN_BIN/aarch64-linux-android-
           make -j$(nproc)
           cat include/config/kernel.release
 
@@ -57,7 +56,7 @@ jobs:
         working-directory: driver
         run: |
           export ARCH=arm64
-          export CROSS_COMPILE=$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-
+          export CROSS_COMPILE=$TOOLCHAIN_BIN/aarch64-linux-android-
           make KSRC=$GITHUB_WORKSPACE/kernel_src modules
 
       - uses: actions/upload-artifact@v4
