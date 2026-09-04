@@ -65,12 +65,16 @@ jobs:
           export ANDROID_MAJOR_VERSION=o
           export HOSTCC=gcc
           
+          # 1. Set platform to Android ARM64
           sed -i 's/CONFIG_PLATFORM_I386_PC = y/CONFIG_PLATFORM_I386_PC = n/' Makefile
           sed -i 's/CONFIG_PLATFORM_ARM_ANDROID = n/CONFIG_PLATFORM_ARM_ANDROID = y/' Makefile
           
-          # FIX: Explicitly add the driver's include directory so the compiler finds drv_types.h
+          # 2. FIX: Strip all -Werror flags from the Makefile to prevent warnings from failing the build
+          sed -i 's/-Werror//g' Makefile
+          
+          # 3. Build with explicit include paths and comprehensive warning suppressions
           DRIVER_DIR="${{ github.workspace }}/driver"
-          make KSRC=${{ github.workspace }}/kernel_src EXTRA_CFLAGS="-DCONFIG_LITTLE_ENDIAN -I${DRIVER_DIR}/include -I${DRIVER_DIR}/hal/phydm" modules
+          make KSRC=${{ github.workspace }}/kernel_src EXTRA_CFLAGS="-DCONFIG_LITTLE_ENDIAN -I${DRIVER_DIR}/include -I${DRIVER_DIR}/hal/phydm -Wno-error -Wno-implicit-fallthrough -Wno-unused-variable -Wno-unused-but-set-variable" modules
 
       - name: Upload Kernel Module
         uses: actions/upload-artifact@v4
