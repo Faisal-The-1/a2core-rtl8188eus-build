@@ -66,12 +66,19 @@ jobs:
           export HOSTCC=gcc
           
           # CRITICAL FIX:
-          # 1. DO NOT touch the Makefile. Leave CONFIG_PLATFORM_I386_PC = y.
-          #    This defines PLATFORM_LINUX, which is REQUIRED for the cfg80211 driver to compile correctly.
-          # 2. Explicitly pass the -I include paths so the compiler finds drv_types.h.
+          # DO NOT pass EXTRA_CFLAGS on the command line, as it OVERRIDES the Makefile's internal flags.
+          # Instead, use sed to inject the missing flags directly into the Makefile.
           
           DRIVER_DIR="${{ github.workspace }}/driver"
-          make KSRC=${{ github.workspace }}/kernel_src EXTRA_CFLAGS="-I${DRIVER_DIR}/include -I${DRIVER_DIR}/hal/phydm -Wno-error -Wno-unused-function -Wno-unused-variable" modules
+          
+          # 1. Inject include paths, DM_ODM_SUPPORT_TYPE=4 (ODM_CE), and warning suppressions at the top of the Makefile
+          sed -i "1i EXTRA_CFLAGS += -I${DRIVER_DIR}/include -I${DRIVER_DIR}/hal/phydm -DDM_ODM_SUPPORT_TYPE=4 -Wno-error -Wno-unused-function -Wno-unused-variable" Makefile
+          
+          # 2. Ensure the default platform is active (this adds -DCONFIG_LITTLE_ENDIAN and -DCONFIG_IOCTL_CFG80211)
+          sed -i 's/CONFIG_PLATFORM_I386_PC = n/CONFIG_PLATFORM_I386_PC = y/' Makefile
+          
+          # 3. Build WITHOUT overriding EXTRA_CFLAGS
+          make KSRC=${{ github.workspace }}/kernel_src modules
 
       - name: Upload Kernel Module
         uses: actions/upload-artifact@v4
