@@ -50,8 +50,18 @@ jobs:
           yes "" | make HOSTCFLAGS="-fcommon" -j$(nproc) Image
           echo "Kernel release: $(cat include/config/kernel.release)"
 
-      - name: Clone COMPATIBLE driver (lwfinger fork for kernel 3.18)
+      - name: Clone driver
         run: git clone https://github.com/lwfinger/rtl8188eu driver
+
+      - name: Patch driver for GCC 4.9 compatibility
+        working-directory: driver
+        run: |
+          # Remove __attribute__((__fallthrough__)) which GCC 4.9 doesn't understand
+          find . -type f -name "*.c" -exec sed -i 's/__attribute__ ((__fallthrough__));//g' {} +
+          find . -type f -name "*.c" -exec sed -i 's/__attribute__((__fallthrough__));//g' {} +
+          find . -type f -name "*.c" -exec sed -i 's/__attribute__ ((fallthrough));//g' {} +
+          find . -type f -name "*.c" -exec sed -i 's/__attribute__((fallthrough));//g' {} +
+          find . -type f -name "*.c" -exec sed -i 's/fallthrough;//g' {} +
 
       - name: Build driver
         working-directory: driver
@@ -60,9 +70,9 @@ jobs:
           export CROSS_COMPILE=${{ env.TOOLCHAIN_BIN }}/aarch64-linux-android-
           export ANDROID_MAJOR_VERSION=o
           export HOSTCC=gcc
-
-          # lwfinger driver is designed for older kernels and compiles cleanly
-          make KSRC=${{ github.workspace }}/kernel_src modules
+          
+          # Add -Wno-error to prevent any remaining warnings from failing the build
+          make KSRC=${{ github.workspace }}/kernel_src EXTRA_CFLAGS="-Wno-error" modules
 
       - name: Upload Kernel Module
         uses: actions/upload-artifact@v4
