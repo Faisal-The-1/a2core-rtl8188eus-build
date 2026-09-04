@@ -32,8 +32,10 @@ jobs:
           export ARCH=arm64
           export CROSS_COMPILE=${{ env.TOOLCHAIN_BIN }}/aarch64-linux-android-
           export ANDROID_MAJOR_VERSION=o
+          export HOSTCC=gcc
           
-          make exynos7870-a2corelte_defconfig || make exynos7870_defconfig
+          # FIX: Use yes "" to automatically answer any hidden prompts and prevent hanging
+          yes "" | make exynos7870-a2corelte_defconfig || yes "" | make exynos7870_defconfig
           
           scripts/config --disable CONFIG_MODULE_SIG
           scripts/config --disable CONFIG_MODULE_SIG_FORCE
@@ -47,7 +49,11 @@ jobs:
         run: |
           export ARCH=arm64
           export CROSS_COMPILE=${{ env.TOOLCHAIN_BIN }}/aarch64-linux-android-
-          make -j$(nproc) Image
+          export ANDROID_MAJOR_VERSION=o
+          export HOSTCC=gcc
+          
+          # FIX: Use yes "" to prevent hangs during compilation
+          yes "" | make -j$(nproc) Image
           echo "Kernel release: $(cat include/config/kernel.release)"
 
       - name: Clone driver
@@ -58,6 +64,8 @@ jobs:
         run: |
           export ARCH=arm64
           export CROSS_COMPILE=${{ env.TOOLCHAIN_BIN }}/aarch64-linux-android-
+          export ANDROID_MAJOR_VERSION=o
+          export HOSTCC=gcc
           
           sed -i 's/CONFIG_PLATFORM_I386_PC = y/CONFIG_PLATFORM_I386_PC = n/' Makefile
           sed -i 's/CONFIG_PLATFORM_ARM_ANDROID = n/CONFIG_PLATFORM_ARM_ANDROID = y/' Makefile
