@@ -50,10 +50,10 @@ jobs:
           yes "" | make HOSTCFLAGS="-fcommon" -j$(nproc) Image
           echo "Kernel release: $(cat include/config/kernel.release)"
 
-      - name: Clone driver
-        run: git clone https://github.com/aircrack-ng/rtl8188eus driver
+      - name: Clone COMPATIBLE driver (lwfinger fork for kernel 3.18)
+        run: git clone https://github.com/lwfinger/rtl8188eu driver
 
-      - name: Patch and build driver
+      - name: Build driver
         working-directory: driver
         run: |
           export ARCH=arm64
@@ -61,26 +61,7 @@ jobs:
           export ANDROID_MAJOR_VERSION=o
           export HOSTCC=gcc
 
-          DRIVER_DIR="${{ github.workspace }}/driver"
-
-          # 1. Keep default platform (CONFIG_PLATFORM_I386_PC = y)
-          #    This correctly defines PLATFORM_LINUX, CONFIG_LITTLE_ENDIAN,
-          #    CONFIG_IOCTL_CFG80211, and DM_ODM_SUPPORT_TYPE=ODM_CE
-
-          # 2. Strip modern GCC flags that GCC 4.9 does not understand
-          sed -i 's/-Wno-enum-conversion//g' Makefile
-          sed -i 's/-Wno-sometimes-uninitialized//g' Makefile
-          sed -i 's/-Wno-cast-function-type//g' Makefile
-          sed -i 's/-Wno-address-of-packed-member//g' Makefile
-          sed -i 's/-Wno-stringop-truncation//g' Makefile
-          sed -i 's/-Wno-misleading-indentation//g' Makefile
-
-          # 3. Inject include paths and -Wno-error at the top of Makefile
-          #    -I flags fix drv_types.h not found
-          #    -Wno-error prevents ANY remaining warning from killing the build
-          sed -i "1i EXTRA_CFLAGS += -I${DRIVER_DIR}/include -I${DRIVER_DIR}/hal/phydm -Wno-error" Makefile
-
-          # 4. Build without overriding EXTRA_CFLAGS on command line
+          # lwfinger driver is designed for older kernels and compiles cleanly
           make KSRC=${{ github.workspace }}/kernel_src modules
 
       - name: Upload Kernel Module
