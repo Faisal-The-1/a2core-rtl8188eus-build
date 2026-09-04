@@ -20,34 +20,40 @@ jobs:
           mkdir kernel_src
           tar xzf Kernel.tar.gz -C kernel_src
 
-      - name: Download legacy NDK toolchain (contains GCC 4.9)
+      - name: Download legacy NDK toolchain (GCC 4.9)
         run: |
           wget -q https://dl.google.com/android/repository/android-ndk-r16b-linux-x86_64.zip -O ndk.zip
           unzip -q ndk.zip "android-ndk-r16b/toolchains/aarch64-linux-android-4.9/*"
-          echo "TOOLCHAIN_BIN=$GITHUB_WORKSPACE/android-ndk-r16b/toolchains/aarch64-linux-android-4.9/prebuilt/linux-x86_64/bin" >> $GITHUB_ENV
-
-      - name: Verify toolchain
-        run: |
-          ls -la $TOOLCHAIN_BIN
-          $TOOLCHAIN_BIN/aarch64-linux-android-gcc --version
+          echo "TOOLCHAIN_BIN=\$GITHUB_WORKSPACE/android-ndk-r16b/toolchains/aarch64-linux-android-4.9/prebuilt/linux-x86_64/bin" >> \$GITHUB_ENV
 
       - name: Configure kernel
         working-directory: kernel_src
         run: |
           export ARCH=arm64
-          export CROSS_COMPILE=$TOOLCHAIN_BIN/aarch64-linux-android-
+          export CROSS_COMPILE=\$TOOLCHAIN_BIN/aarch64-linux-android-
           export ANDROID_MAJOR_VERSION=o
-          make exynos7870-a2corelte_defconfig
+          
+          # Use the defconfig from your kernel source
+          make exynos7870-a2corelte_defconfig || make exynos7870_defconfig
+          
+          # CRITICAL FIX 1: Disable module signing to prevent "Required key not available"
+          scripts/config --disable CONFIG_MODULE_SIG
+          scripts/config --disable CONFIG_MODULE_SIG_FORCE
+          scripts/config --disable CONFIG_MODULE_SIG_ALL
+          
+          # CRITICAL FIX 2: Prevent git hash from appending to version (causes version magic mismatch)
           scripts/config --disable CONFIG_LOCALVERSION_AUTO
-          scripts/config --set-str CONFIG_LOCALVERSION "-15641782-QB44726894"
+          
+          # CRITICAL FIX 3: Set EXACT localversion (UPDATE THIS STRING TO MATCH YOUR DEVICE)
+          scripts/config --set-str CONFIG_LOCALVERSION "YOUR_EXACT_LOCALVERSION_HERE"
 
-      - name: Build kernel
+      - name: Build kernel (generates fresh Module.symvers)
         working-directory: kernel_src
         run: |
           export ARCH=arm64
-          export CROSS_COMPILE=$TOOLCHAIN_BIN/aarch64-linux-android-
-          make -j$(nproc)
-          cat include/config/kernel.release
+          export CROSS_COMPILE=\$TOOLCHAIN_BIN/aarch64-linux-android-
+          make -j\$(nproc) Image
+          echo "Kernel release: \$(cat include/config/kernel.release)"
 
       - name: Clone driver
         run: git clone https://github.com/aircrack-ng/rtl8188eus driver
@@ -56,10 +62,25 @@ jobs:
         working-directory: driver
         run: |
           export ARCH=arm64
-          export CROSS_COMPILE=$TOOLCHAIN_BIN/aarch64-linux-android-
-          make KSRC=$GITHUB_WORKSPACE/kernel_src modules
+          export CROSS_COMPILE=\$TOOLCHAIN_BIN/aarch64-linux-android-
+          
+          # CRITICAL FIX 4: Force Realtek Makefile to use Android ARM64 settings
+          sed -i 's/CONFIG_PLATFORM_I386_PC = y/CONFIG_PLATFORM_I386_PC = n/' Makefile
+          sed -i 's/CONFIG_PLATFORM_ARM_ANDROID = n/CONFIG_PLATFORM_ARM_ANDROID = y/' Makefile
+          
+          make KSRC=\$GITHUB_WORKSPACE/kernel_src EXTRA_CFLAGS="-DCONFIG_LITTLE_ENDIAN" modules
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload Kernel Module
+        uses: actions/upload-artifact@v4
         with:
           name: 8188eu-module
-          path: driver/*.ko
+          path: driver/8188eu.ko
+
+      - name: Upload Debug Files
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-debug-files
+          path: |
+            kernel_src/.config
+            kernel_src/Module.symvers
+            kernel_src/include/config/kernel.release
