@@ -1,0 +1,57 @@
+name: Build RTL8188EUS for A2 Core
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc flex bison libssl-dev libncurses-dev git wget
+
+      - name: Download kernel source
+        run: |
+          wget -O Kernel.tar.gz "https://github.com/Faisal-The-1/a2core-rtl8188eus-build/releases/download/v1/Kernel.tar.gz"
+          mkdir kernel_src
+          tar xzf Kernel.tar.gz -C kernel_src
+
+      - name: Install toolchain
+        run: git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 toolchain
+
+      - name: Configure kernel
+        working-directory: kernel_src
+        run: |
+          export ARCH=arm64
+          export CROSS_COMPILE=$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-
+          export ANDROID_MAJOR_VERSION=o
+          make exynos7870-a2corelte_defconfig
+          scripts/config --disable CONFIG_LOCALVERSION_AUTO
+          scripts/config --set-str CONFIG_LOCALVERSION "-15641782-QB44726894"
+
+      - name: Build kernel
+        working-directory: kernel_src
+        run: |
+          export ARCH=arm64
+          export CROSS_COMPILE=$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-
+          make -j$(nproc)
+          cat include/config/kernel.release
+
+      - name: Clone driver
+        run: git clone https://github.com/aircrack-ng/rtl8188eus driver
+
+      - name: Build driver
+        working-directory: driver
+        run: |
+          export ARCH=arm64
+          export CROSS_COMPILE=$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-
+          make KSRC=$GITHUB_WORKSPACE/kernel_src modules
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 8188eu-module
+          path: driver/*.ko
