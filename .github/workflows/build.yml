@@ -69,12 +69,12 @@ jobs:
           sed -i 's/CONFIG_PLATFORM_I386_PC = y/CONFIG_PLATFORM_I386_PC = n/' Makefile
           sed -i 's/CONFIG_PLATFORM_ARM_ANDROID = n/CONFIG_PLATFORM_ARM_ANDROID = y/' Makefile
           
-          # 2. FIX: Strip all -Werror flags from the Makefile to prevent warnings from failing the build
+          # 2. Strip -Werror from the driver's Makefile
           sed -i 's/-Werror//g' Makefile
           
-          # 3. Build with explicit include paths and comprehensive warning suppressions
+          # 3. Build with explicit include paths and GCC 4.9 compatible warning suppressions
           DRIVER_DIR="${{ github.workspace }}/driver"
-          make KSRC=${{ github.workspace }}/kernel_src EXTRA_CFLAGS="-DCONFIG_LITTLE_ENDIAN -I${DRIVER_DIR}/include -I${DRIVER_DIR}/hal/phydm -Wno-error -Wno-implicit-fallthrough -Wno-unused-variable -Wno-unused-but-set-variable" modules
+          make KSRC=${{ github.workspace }}/kernel_src EXTRA_CFLAGS="-DCONFIG_LITTLE_ENDIAN -I${DRIVER_DIR}/include -I${DRIVER_DIR}/hal/phydm -Wno-error -Wno-unused-function -Wno-unused-variable" modules
 
       - name: Upload Kernel Module
         uses: actions/upload-artifact@v4
