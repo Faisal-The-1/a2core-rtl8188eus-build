@@ -33,51 +33,54 @@ jobs:
           export CROSS_COMPILE=${{ env.TOOLCHAIN_BIN }}/aarch64-linux-android-
           export ANDROID_MAJOR_VERSION=o
           export HOSTCC=gcc
-          
           yes "" | make HOSTCFLAGS="-fcommon" exynos7870-a2corelte_defconfig || yes "" | make HOSTCFLAGS="-fcommon" exynos7870_defconfig
-          
           scripts/config --disable CONFIG_MODULE_SIG
           scripts/config --disable CONFIG_MODULE_SIG_FORCE
           scripts/config --disable CONFIG_MODULE_SIG_ALL
           scripts/config --disable CONFIG_LOCALVERSION_AUTO
-          
           scripts/config --set-str CONFIG_LOCALVERSION "-15641782-QB44726894"
 
-      - name: Build kernel (generates fresh Module.symvers)
+      - name: Build kernel
         working-directory: kernel_src
         run: |
           export ARCH=arm64
           export CROSS_COMPILE=${{ env.TOOLCHAIN_BIN }}/aarch64-linux-android-
           export ANDROID_MAJOR_VERSION=o
           export HOSTCC=gcc
-          
           yes "" | make HOSTCFLAGS="-fcommon" -j$(nproc) Image
           echo "Kernel release: $(cat include/config/kernel.release)"
 
       - name: Clone driver
         run: git clone https://github.com/aircrack-ng/rtl8188eus driver
 
-      - name: Build driver
+      - name: Patch and build driver
         working-directory: driver
         run: |
           export ARCH=arm64
           export CROSS_COMPILE=${{ env.TOOLCHAIN_BIN }}/aarch64-linux-android-
           export ANDROID_MAJOR_VERSION=o
           export HOSTCC=gcc
-          
-          # CRITICAL FIX:
-          # DO NOT pass EXTRA_CFLAGS on the command line, as it OVERRIDES the Makefile's internal flags.
-          # Instead, use sed to inject the missing flags directly into the Makefile.
-          
+
           DRIVER_DIR="${{ github.workspace }}/driver"
-          
-          # 1. Inject include paths, DM_ODM_SUPPORT_TYPE=4 (ODM_CE), and warning suppressions at the top of the Makefile
-          sed -i "1i EXTRA_CFLAGS += -I${DRIVER_DIR}/include -I${DRIVER_DIR}/hal/phydm -DDM_ODM_SUPPORT_TYPE=4 -Wno-error -Wno-unused-function -Wno-unused-variable" Makefile
-          
-          # 2. Ensure the default platform is active (this adds -DCONFIG_LITTLE_ENDIAN and -DCONFIG_IOCTL_CFG80211)
-          sed -i 's/CONFIG_PLATFORM_I386_PC = n/CONFIG_PLATFORM_I386_PC = y/' Makefile
-          
-          # 3. Build WITHOUT overriding EXTRA_CFLAGS
+
+          # 1. Keep default platform (CONFIG_PLATFORM_I386_PC = y)
+          #    This correctly defines PLATFORM_LINUX, CONFIG_LITTLE_ENDIAN,
+          #    CONFIG_IOCTL_CFG80211, and DM_ODM_SUPPORT_TYPE=ODM_CE
+
+          # 2. Strip modern GCC flags that GCC 4.9 does not understand
+          sed -i 's/-Wno-enum-conversion//g' Makefile
+          sed -i 's/-Wno-sometimes-uninitialized//g' Makefile
+          sed -i 's/-Wno-cast-function-type//g' Makefile
+          sed -i 's/-Wno-address-of-packed-member//g' Makefile
+          sed -i 's/-Wno-stringop-truncation//g' Makefile
+          sed -i 's/-Wno-misleading-indentation//g' Makefile
+
+          # 3. Inject include paths and -Wno-error at the top of Makefile
+          #    -I flags fix drv_types.h not found
+          #    -Wno-error prevents ANY remaining warning from killing the build
+          sed -i "1i EXTRA_CFLAGS += -I${DRIVER_DIR}/include -I${DRIVER_DIR}/hal/phydm -Wno-error" Makefile
+
+          # 4. Build without overriding EXTRA_CFLAGS on command line
           make KSRC=${{ github.workspace }}/kernel_src modules
 
       - name: Upload Kernel Module
