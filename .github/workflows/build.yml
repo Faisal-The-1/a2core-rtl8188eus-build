@@ -26,7 +26,7 @@ jobs:
           unzip -q ndk.zip "android-ndk-r16b/toolchains/aarch64-linux-android-4.9/*"
           echo "TOOLCHAIN_BIN=${{ github.workspace }}/android-ndk-r16b/toolchains/aarch64-linux-android-4.9/prebuilt/linux-x86_64/bin" >> $GITHUB_ENV
 
-      - name: Configure kernel
+      - name: Configure kernel (SAFE CONFIGS ONLY)
         working-directory: kernel_src
         run: |
           export ARCH=arm64
@@ -35,9 +35,6 @@ jobs:
           export HOSTCC=gcc
           cp ${{ github.workspace }}/kernel_config.txt .config
           scripts/config --disable CONFIG_MODVERSIONS
-          scripts/config --enable CONFIG_SECURITY_SELINUX_BOOTPARAM
-          scripts/config --set-val CONFIG_SECURITY_SELINUX_BOOTPARAM_VALUE 0
-          scripts/config --enable CONFIG_SECURITY_SELINUX_DEVELOP
           scripts/config --disable CONFIG_MODULE_SIG
           scripts/config --disable CONFIG_MODULE_SIG_FORCE
           scripts/config --disable CONFIG_MODULE_SIG_ALL
