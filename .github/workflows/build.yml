@@ -34,20 +34,16 @@ jobs:
           export ANDROID_MAJOR_VERSION=o
           export HOSTCC=gcc
 
-          # Copy the running config from the device as our base
           cp ${{ github.workspace }}/kernel_config.txt .config
-
-          # Disable module signing
           scripts/config --disable CONFIG_MODULE_SIG
           scripts/config --disable CONFIG_MODULE_SIG_FORCE
           scripts/config --disable CONFIG_MODULE_SIG_ALL
           scripts/config --disable CONFIG_LOCALVERSION_AUTO
           scripts/config --set-str CONFIG_LOCALVERSION "-15641782-QB44726894"
 
-          # Apply config
           yes "" | make HOSTCFLAGS="-fcommon" oldconfig
 
-      - name: Build kernel Image and DTBs
+      - name: Build kernel Image.gz-dtb (Samsung format)
         working-directory: kernel_src
         run: |
           export ARCH=arm64
@@ -55,19 +51,14 @@ jobs:
           export ANDROID_MAJOR_VERSION=o
           export HOSTCC=gcc
 
-          # Build kernel Image + all device tree blobs
-          yes "" | make HOSTCFLAGS="-fcommon" -j$(nproc) Image dtbs
+          yes "" | make HOSTCFLAGS="-fcommon" -j$(nproc) Image.gz-dtb
           echo "Kernel release: $(cat include/config/kernel.release)"
-
-          # List built DTBs so we can identify the correct one
-          echo "=== Built DTBs ==="
-          find arch/arm64/boot/dts -name "*.dtb" | head -20
+          ls -lh arch/arm64/boot/Image.gz-dtb
 
       - name: Clone and patch RTL8188EU driver
         run: |
           git clone https://github.com/lwfinger/rtl8188eu driver
           cd driver
-          # Remove GCC 7+ fallthrough attributes
           find . -name "*.c" -exec sed -i '/fallthrough/d' {} +
 
       - name: Build RTL8188EU module against our kernel
@@ -78,35 +69,17 @@ jobs:
           export ANDROID_MAJOR_VERSION=o
           export HOSTCC=gcc
 
-          # Inject warning suppressions into Makefile (NOT command line)
           sed -i '1i EXTRA_CFLAGS += -Wno-error -Wno-declaration-after-statement' Makefile
-
-          # Build module against OUR kernel tree (CRCs will match perfectly)
           make KSRC=${{ github.workspace }}/kernel_src modules
 
-      - name: Upload kernel Image
+      - name: Upload kernel Image.gz-dtb
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-image
-          path: kernel_src/arch/arm64/boot/Image
-
-      - name: Upload DTBs
-        uses: actions/upload-artifact@v4
-        with:
-          name: kernel-dtbs
-          path: kernel_src/arch/arm64/boot/dts/**/*.dtb
+          name: kernel-image-gz-dtb
+          path: kernel_src/arch/arm64/boot/Image.gz-dtb
 
       - name: Upload RTL8188EU module
         uses: actions/upload-artifact@v4
         with:
           name: 8188eu-module
           path: driver/8188eu.ko
-
-      - name: Upload Module.symvers and config
-        uses: actions/upload-artifact@v4
-        with:
-          name: kernel-debug
-          path: |
-            kernel_src/Module.symvers
-            kernel_src/.config
-            kernel_src/include/config/kernel.release
