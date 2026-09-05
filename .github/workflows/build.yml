@@ -26,7 +26,7 @@ jobs:
           unzip -q ndk.zip "android-ndk-r16b/toolchains/aarch64-linux-android-4.9/*"
           echo "TOOLCHAIN_BIN=${{ github.workspace }}/android-ndk-r16b/toolchains/aarch64-linux-android-4.9/prebuilt/linux-x86_64/bin" >> $GITHUB_ENV
 
-      - name: Configure kernel (no modversions, NO SELINUX)
+      - name: Configure kernel
         working-directory: kernel_src
         run: |
           export ARCH=arm64
@@ -35,21 +35,15 @@ jobs:
           export HOSTCC=gcc
           cp ${{ github.workspace }}/kernel_config.txt .config
           scripts/config --disable CONFIG_MODVERSIONS
-          scripts/config --disable CONFIG_SECURITY_SELINUX
-          scripts/config --disable CONFIG_SECURITY_SELINUX_BOOTPARAM
-          scripts/config --disable CONFIG_SECURITY_SELINUX_DISABLE
-          scripts/config --disable CONFIG_SECURITY_SELINUX_DEVELOP
-          scripts/config --disable CONFIG_SECURITY_SELINUX_AVC_STATS
-          scripts/config --disable CONFIG_DEFAULT_SECURITY_SELINUX
-          scripts/config --enable CONFIG_DEFAULT_SECURITY_DAC
+          scripts/config --enable CONFIG_SECURITY_SELINUX_BOOTPARAM
+          scripts/config --set-val CONFIG_SECURITY_SELINUX_BOOTPARAM_VALUE 0
+          scripts/config --enable CONFIG_SECURITY_SELINUX_DEVELOP
           scripts/config --disable CONFIG_MODULE_SIG
           scripts/config --disable CONFIG_MODULE_SIG_FORCE
           scripts/config --disable CONFIG_MODULE_SIG_ALL
           scripts/config --disable CONFIG_LOCALVERSION_AUTO
           scripts/config --set-str CONFIG_LOCALVERSION "-15641782-QB44726894"
           yes "" | make HOSTCFLAGS="-fcommon" oldconfig
-          echo "=== PROOF: final config ==="
-          grep -E "CONFIG_SECURITY_SELINUX=|CONFIG_MODVERSIONS=" .config || echo "SELINUX: not set (GOOD)"
 
       - name: Build kernel Image
         working-directory: kernel_src
@@ -59,11 +53,31 @@ jobs:
           export ANDROID_MAJOR_VERSION=o
           export HOSTCC=gcc
           yes "" | make HOSTCFLAGS="-fcommon" -j$(nproc) Image
-          echo "=== PROOF: SELinux string count in Image (must be 0) ==="
-          grep -aoc SELinux arch/arm64/boot/Image || echo "0 occurrences - SELINUX IS GONE"
+
+      - name: Clone and patch RTL8188EU driver
+        run: |
+          git clone https://github.com/lwfinger/rtl8188eu driver
+          cd driver
+          find . -name "*.c" -exec sed -i '/fallthrough/d' {} +
+
+      - name: Build RTL8188EU module (same tree = matching vermagic)
+        working-directory: driver
+        run: |
+          export ARCH=arm64
+          export CROSS_COMPILE=${{ env.TOOLCHAIN_BIN }}/aarch64-linux-android-
+          export ANDROID_MAJOR_VERSION=o
+          export HOSTCC=gcc
+          sed -i '1i EXTRA_CFLAGS += -Wno-error -Wno-declaration-after-statement' Makefile
+          make KSRC=${{ github.workspace }}/kernel_src modules
 
       - name: Upload kernel Image
         uses: actions/upload-artifact@v4
         with:
           name: kernel-image-raw
           path: kernel_src/arch/arm64/boot/Image
+
+      - name: Upload RTL8188EU module
+        uses: actions/upload-artifact@v4
+        with:
+          name: 8188eu-module
+          path: driver/8188eu.ko
