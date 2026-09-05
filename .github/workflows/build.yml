@@ -26,7 +26,7 @@ jobs:
           unzip -q ndk.zip "android-ndk-r16b/toolchains/aarch64-linux-android-4.9/*"
           echo "TOOLCHAIN_BIN=${{ github.workspace }}/android-ndk-r16b/toolchains/aarch64-linux-android-4.9/prebuilt/linux-x86_64/bin" >> $GITHUB_ENV
 
-      - name: Configure kernel with device config
+      - name: Configure kernel (no modversions, NO SELINUX)
         working-directory: kernel_src
         run: |
           export ARCH=arm64
@@ -35,6 +35,16 @@ jobs:
           export HOSTCC=gcc
 
           cp ${{ github.workspace }}/kernel_config.txt .config
+
+          scripts/config --disable CONFIG_MODVERSIONS
+          scripts/config --disable CONFIG_SECURITY_SELINUX
+          scripts/config --disable CONFIG_SECURITY_SELINUX_BOOTPARAM
+          scripts/config --disable CONFIG_SECURITY_SELINUX_DISABLE
+          scripts/config --disable CONFIG_SECURITY_SELINUX_DEVELOP
+          scripts/config --disable CONFIG_SECURITY_SELINUX_AVC_STATS
+          scripts/config --disable CONFIG_SECURITY_SELINUX_CHECKREQPROT_VALUE
+          scripts/config --disable CONFIG_DEFAULT_SECURITY_SELINUX
+          scripts/config --enable CONFIG_DEFAULT_SECURITY_DAC
           scripts/config --disable CONFIG_MODULE_SIG
           scripts/config --disable CONFIG_MODULE_SIG_FORCE
           scripts/config --disable CONFIG_MODULE_SIG_ALL
@@ -43,43 +53,18 @@ jobs:
 
           yes "" | make HOSTCFLAGS="-fcommon" oldconfig
 
-      - name: Build kernel Image.gz-dtb (Samsung format)
+      - name: Build kernel Image
         working-directory: kernel_src
         run: |
           export ARCH=arm64
           export CROSS_COMPILE=${{ env.TOOLCHAIN_BIN }}/aarch64-linux-android-
           export ANDROID_MAJOR_VERSION=o
           export HOSTCC=gcc
+          yes "" | make HOSTCFLAGS="-fcommon" -j$(nproc) Image
+          ls -lh arch/arm64/boot/Image
 
-          yes "" | make HOSTCFLAGS="-fcommon" -j$(nproc) Image.gz-dtb
-          echo "Kernel release: $(cat include/config/kernel.release)"
-          ls -lh arch/arm64/boot/Image.gz-dtb
-
-      - name: Clone and patch RTL8188EU driver
-        run: |
-          git clone https://github.com/lwfinger/rtl8188eu driver
-          cd driver
-          find . -name "*.c" -exec sed -i '/fallthrough/d' {} +
-
-      - name: Build RTL8188EU module against our kernel
-        working-directory: driver
-        run: |
-          export ARCH=arm64
-          export CROSS_COMPILE=${{ env.TOOLCHAIN_BIN }}/aarch64-linux-android-
-          export ANDROID_MAJOR_VERSION=o
-          export HOSTCC=gcc
-
-          sed -i '1i EXTRA_CFLAGS += -Wno-error -Wno-declaration-after-statement' Makefile
-          make KSRC=${{ github.workspace }}/kernel_src modules
-
-      - name: Upload kernel Image.gz-dtb
+      - name: Upload kernel Image
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-image-gz-dtb
-          path: kernel_src/arch/arm64/boot/Image.gz-dtb
-
-      - name: Upload RTL8188EU module
-        uses: actions/upload-artifact@v4
-        with:
-          name: 8188eu-module
-          path: driver/8188eu.ko
+          name: kernel-image-raw
+          path: kernel_src/arch/arm64/boot/Image
