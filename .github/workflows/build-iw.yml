@@ -1,0 +1,31 @@
+name: Build Static iw
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential wget tar libnl-3-dev libnl-genl-3-dev pkg-config
+
+      - name: Download iw source
+        run: |
+          wget -q https://www.kernel.org/pub/software/network/iw/iw-5.19.tar.gz
+          tar xzf iw-5.19.tar.gz
+
+      - name: Build static iw
+        working-directory: iw-5.19
+        run: |
+          make LDFLAGS="-static" -j$(nproc)
+          ls -lh iw
+          file iw
+
+      - name: Upload static iw
+        uses: actions/upload-artifact@v4
+        with:
+          name: static-iw
+          path: iw-5.19/iw
