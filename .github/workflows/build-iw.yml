@@ -9,20 +9,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install build deps
-        run: sudo apt-get update && sudo apt-get install -y build-essential wget tar libnl-3-dev libnl-genl-3-dev pkg-config
+      - name: Install cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential wget tar pkg-config gcc-aarch64-linux-gnu
 
-      - name: Download iw source
+      - name: Build libnl for aarch64 (static)
+        run: |
+          wget -q https://github.com/thom311/libnl/releases/download/libnl3_7_0/libnl-3.7.0.tar.gz
+          tar xzf libnl-3.7.0.tar.gz
+          cd libnl-3.7.0
+          ./configure --host=aarch64-linux --prefix=$GITHUB_WORKSPACE/sysroot --disable-shared --enable-static CC=aarch64-linux-gnu-gcc
+          make -j$(nproc)
+          make install
+
+      - name: Build iw for aarch64 (static)
         run: |
           wget -q https://www.kernel.org/pub/software/network/iw/iw-5.19.tar.gz
           tar xzf iw-5.19.tar.gz
-
-      - name: Build static iw
-        working-directory: iw-5.19
-        run: |
-          make LDFLAGS="-static" -j$(nproc)
-          ls -lh iw
+          cd iw-5.19
+          export PKG_CONFIG_LIBDIR=$GITHUB_WORKSPACE/sysroot/lib/pkgconfig
+          make CC=aarch64-linux-gnu-gcc LDFLAGS="-static" -j$(nproc)
           file iw
+          ls -lh iw
 
       - name: Upload static iw
         uses: actions/upload-artifact@v4
