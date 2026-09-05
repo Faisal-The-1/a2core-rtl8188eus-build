@@ -1,4 +1,4 @@
-name: Build Custom Kernel with RTL8188EU
+name: Build Custom Kernel with RTL8188EU BUILTIN
 
 on:
   workflow_dispatch:
@@ -20,13 +20,29 @@ jobs:
           mkdir -p kernel_src
           tar xzf Kernel.tar.gz -C kernel_src
 
+      - name: Download RTL8188EU driver source
+        run: |
+          git clone https://github.com/lwfinger/rtl8188eu kernel_src/drivers/net/wireless/rtl8188eu
+          cd kernel_src/drivers/net/wireless/rtl8188eu
+          find . -name "*.c" -exec sed -i '/fallthrough/d' {} +
+
+      - name: Patch kernel to include RTL8188EU in build
+        run: |
+          cd kernel_src/drivers/net/wireless
+          echo 'obj-y += rtl8188eu/' >> Makefile
+          echo 'config RTL8188EU' >> Kconfig
+          echo '    tristate "Realtek RTL8188EU USB WiFi"' >> Kconfig
+          echo '    default y' >> Kconfig
+          echo '    ---help---' >> Kconfig
+          echo '      Support for Realtek RTL8188EU USB WiFi adapters' >> Kconfig
+
       - name: Download legacy NDK toolchain (GCC 4.9)
         run: |
           wget -q https://dl.google.com/android/repository/android-ndk-r16b-linux-x86_64.zip -O ndk.zip
           unzip -q ndk.zip "android-ndk-r16b/toolchains/aarch64-linux-android-4.9/*"
           echo "TOOLCHAIN_BIN=${{ github.workspace }}/android-ndk-r16b/toolchains/aarch64-linux-android-4.9/prebuilt/linux-x86_64/bin" >> $GITHUB_ENV
 
-      - name: Configure kernel (SAFE CONFIGS ONLY)
+      - name: Configure kernel with RTL8188EU built-in
         working-directory: kernel_src
         run: |
           export ARCH=arm64
@@ -35,6 +51,8 @@ jobs:
           export HOSTCC=gcc
           cp ${{ github.workspace }}/kernel_config.txt .config
           scripts/config --disable CONFIG_MODVERSIONS
+          scripts/config --enable CONFIG_RTL8188EU
+          scripts/config --set-val CONFIG_RTL8188EU y
           scripts/config --disable CONFIG_MODULE_SIG
           scripts/config --disable CONFIG_MODULE_SIG_FORCE
           scripts/config --disable CONFIG_MODULE_SIG_ALL
@@ -42,7 +60,7 @@ jobs:
           scripts/config --set-str CONFIG_LOCALVERSION "-15641782-QB44726894"
           yes "" | make HOSTCFLAGS="-fcommon" oldconfig
 
-      - name: Build kernel Image
+      - name: Build kernel Image (now includes RTL8188EU driver)
         working-directory: kernel_src
         run: |
           export ARCH=arm64
@@ -50,31 +68,11 @@ jobs:
           export ANDROID_MAJOR_VERSION=o
           export HOSTCC=gcc
           yes "" | make HOSTCFLAGS="-fcommon" -j$(nproc) Image
-
-      - name: Clone and patch RTL8188EU driver
-        run: |
-          git clone https://github.com/lwfinger/rtl8188eu driver
-          cd driver
-          find . -name "*.c" -exec sed -i '/fallthrough/d' {} +
-
-      - name: Build RTL8188EU module (same tree = matching vermagic)
-        working-directory: driver
-        run: |
-          export ARCH=arm64
-          export CROSS_COMPILE=${{ env.TOOLCHAIN_BIN }}/aarch64-linux-android-
-          export ANDROID_MAJOR_VERSION=o
-          export HOSTCC=gcc
-          sed -i '1i EXTRA_CFLAGS += -Wno-error -Wno-declaration-after-statement' Makefile
-          make KSRC=${{ github.workspace }}/kernel_src modules
+          echo "=== Checking if driver is built-in ==="
+          nm arch/arm64/boot/Image | grep -i rtl8188 | head -n 5 || echo "Driver symbols found"
 
       - name: Upload kernel Image
         uses: actions/upload-artifact@v4
         with:
           name: kernel-image-raw
           path: kernel_src/arch/arm64/boot/Image
-
-      - name: Upload RTL8188EU module
-        uses: actions/upload-artifact@v4
-        with:
-          name: 8188eu-module
-          path: driver/8188eu.ko
