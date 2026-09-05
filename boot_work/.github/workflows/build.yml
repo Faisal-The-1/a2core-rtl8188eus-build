@@ -1,0 +1,89 @@
+name: Build Custom Kernel with RTL8188EU (No modversions)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc flex bison libssl-dev libncurses-dev git wget unzip
+
+      - name: Download kernel source
+        run: |
+          wget -q -O Kernel.tar.gz "https://github.com/Faisal-The-1/a2core-rtl8188eus-build/releases/download/v1/Kernel.tar.gz"
+          mkdir -p kernel_src
+          tar xzf Kernel.tar.gz -C kernel_src
+
+      - name: Download legacy NDK toolchain (GCC 4.9)
+        run: |
+          wget -q https://dl.google.com/android/repository/android-ndk-r16b-linux-x86_64.zip -O ndk.zip
+          unzip -q ndk.zip "android-ndk-r16b/toolchains/aarch64-linux-android-4.9/*"
+          echo "TOOLCHAIN_BIN=${{ github.workspace }}/android-ndk-r16b/toolchains/aarch64-linux-android-4.9/prebuilt/linux-x86_64/bin" >> $GITHUB_ENV
+
+      - name: Configure kernel with modversions DISABLED
+        working-directory: kernel_src
+        run: |
+          export ARCH=arm64
+          export CROSS_COMPILE=${{ env.TOOLCHAIN_BIN }}/aarch64-linux-android-
+          export ANDROID_MAJOR_VERSION=o
+          export HOSTCC=gcc
+
+          cp ${{ github.workspace }}/kernel_config.txt .config
+          
+          # CRITICAL: Disable modversions to remove CRC checksum verification
+          scripts/config --disable CONFIG_MODVERSIONS
+          scripts/config --disable CONFIG_MODULE_SIG
+          scripts/config --disable CONFIG_MODULE_SIG_FORCE
+          scripts/config --disable CONFIG_MODULE_SIG_ALL
+          scripts/config --disable CONFIG_LOCALVERSION_AUTO
+          scripts/config --set-str CONFIG_LOCALVERSION "-15641782-QB44726894"
+
+          yes "" | make HOSTCFLAGS="-fcommon" oldconfig
+
+      - name: Build kernel Image (uncompressed/raw format)
+        working-directory: kernel_src
+        run: |
+          export ARCH=arm64
+          export CROSS_COMPILE=${{ env.TOOLCHAIN_BIN }}/aarch64-linux-android-
+          export ANDROID_MAJOR_VERSION=o
+          export HOSTCC=gcc
+
+          # Build Image (uncompressed) - NOT Image.gz-dtb
+          yes "" | make HOSTCFLAGS="-fcommon" -j$(nproc) Image
+          echo "Kernel release: $(cat include/config/kernel.release)"
+          ls -lh arch/arm64/boot/Image
+
+      - name: Clone and patch RTL8188EU driver
+        run: |
+          git clone https://github.com/lwfinger/rtl8188eu driver
+          cd driver
+          find . -name "*.c" -exec sed -i '/fallthrough/d' {} +
+
+      - name: Build RTL8188EU module against our kernel
+        working-directory: driver
+        run: |
+          export ARCH=arm64
+          export CROSS_COMPILE=${{ env.TOOLCHAIN_BIN }}/aarch64-linux-android-
+          export ANDROID_MAJOR_VERSION=o
+          export HOSTCC=gcc
+
+          sed -i '1i EXTRA_CFLAGS += -Wno-error -Wno-declaration-after-statement' Makefile
+          make KSRC=${{ github.workspace }}/kernel_src modules
+
+      - name: Upload kernel Image (uncompressed)
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-image-raw
+          path: kernel_src/arch/arm64/boot/Image
+
+      - name: Upload RTL8188EU module
+        uses: actions/upload-artifact@v4
+        with:
+          name: 8188eu-module
+          path: driver/8188eu.ko
